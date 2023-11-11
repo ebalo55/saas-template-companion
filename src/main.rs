@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use simplelog::{ColorChoice, Config, TerminalMode, TermLogger};
 
 mod version;

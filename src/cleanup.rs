@@ -1,5 +1,5 @@
 use clap::Args;
-use simplelog::{debug, warn};
+use simplelog::{trace, warn};
 
 use crate::global_args;
 
@@ -11,8 +11,8 @@ pub struct CleanupArgs {
 }
 
 pub fn handle(global_arguments: global_args::GlobalArgs, arguments: CleanupArgs) {
-	debug!("{:?}", global_arguments);
-	debug!("{:?}", arguments);
+	trace!("{:?}", global_arguments);
+	trace!("{:?}", arguments);
 
 	warn!("Not implemented yet 🙁");
 }

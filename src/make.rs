@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
-use simplelog::{debug, info, warn};
+use simplelog::trace;
+
 use crate::global_args;
 
 mod keys;
@@ -23,8 +24,8 @@ pub struct MakeArgs {
 }
 
 pub fn handle(global_arguments: global_args::GlobalArgs, arguments: MakeArgs) {
-	debug!("{:?}", global_arguments);
-	debug!("{:?}", arguments);
+	trace!("{:?}", global_arguments);
+	trace!("{:?}", arguments);
 
 	match arguments.command {
 		MakeSubCommand::Keys => {

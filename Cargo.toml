@@ -11,6 +11,7 @@ lto = true
 
 [dependencies]
 anyhow = "1.0.75"
+ast-grep-core = "0.13.0"
 clap = { version = "4.0", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.1.0"
 exitcode = "1.1.2"
