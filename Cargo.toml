@@ -1,0 +1,23 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[package]
+name = "saas-template-companion"
+version = "1.0.0"
+edition = "2021"
+authors = ["Ebalo <ebalo@override.sh>"]
+
+[profile.release]
+strip = true
+lto = true
+
+[dependencies]
+anyhow = "1.0.75"
+clap = { version = "4.0", features = ["derive", "cargo"] }
+clap-verbosity-flag = "2.1.0"
+exitcode = "1.1.2"
+glob = "0.3.1"
+simplelog = { version = "0.12.1", features = ["paris"] }
+
+[dev-dependencies]
+assert_cmd = { version = "2.0.12", features = ["color-auto"] }
+assert_fs = { version = "1.0.13", features = ["color-auto"] }
+predicates = "3.0.4"
