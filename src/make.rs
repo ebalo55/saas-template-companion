@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use simplelog::trace;
+use log::trace;
 
 use crate::global_args;
 
@@ -23,16 +23,16 @@ pub struct MakeArgs {
 	command: MakeSubCommand,
 }
 
-pub fn handle(global_arguments: global_args::GlobalArgs, arguments: MakeArgs) {
+pub fn handle(global_arguments: &global_args::GlobalArgs, arguments: &MakeArgs) -> anyhow::Result<()> {
 	trace!("{:?}", global_arguments);
 	trace!("{:?}", arguments);
 
-	match arguments.command {
+	match &arguments.command {
 		MakeSubCommand::Keys => {
 			keys::handle(global_arguments)
 		}
 		MakeSubCommand::Signatures(options) => {
-			signatures::handle(global_arguments, options)
+			signatures::handle(global_arguments, &options)
 		}
 	}
 }

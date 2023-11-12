@@ -1,5 +1,5 @@
 use clap::Args;
-use simplelog::{trace, info, warn};
+use log::{trace, info, warn};
 use crate::global_args;
 
 #[derive(Args, Debug)]
@@ -9,10 +9,12 @@ pub struct SignaturesArgs {
 	watch: bool,
 }
 
-pub fn handle(global_arguments: global_args::GlobalArgs, arguments: SignaturesArgs) {
+pub fn handle(global_arguments: &global_args::GlobalArgs, arguments: &SignaturesArgs) -> anyhow::Result<()> {
 	trace!("{:?}", global_arguments);
 	trace!("{:?}", arguments);
 
 	warn!("Not implemented yet 🙁");
-	info!("Running from the signatures handler")
+	info!("Running from the signatures handler");
+
+	Ok(())
 }

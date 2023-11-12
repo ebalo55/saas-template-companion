@@ -10,13 +10,20 @@ strip = true
 lto = true
 
 [dependencies]
+alkali = { version = "0.3.0", features = ["minimal", "optimized"] }
 anyhow = "1.0.75"
 ast-grep-core = "0.13.0"
 clap = { version = "4.0", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.1.0"
 exitcode = "1.1.2"
 glob = "0.3.1"
-simplelog = { version = "0.12.1", features = ["paris"] }
+log4rs = "1.2.0"
+log = "0.4.20"
+comfy-table = "7.1.0"
+serde_json = "1.0.108"
+serde = "1.0.192"
+log-mdc = "0.1.0"
+casey = "0.4.0"
 
 [dev-dependencies]
 assert_cmd = { version = "2.0.12", features = ["color-auto"] }

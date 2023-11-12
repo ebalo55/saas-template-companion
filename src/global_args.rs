@@ -1,8 +1,12 @@
 #[derive(clap::Args, Debug)]
 pub struct GlobalArgs {
-    /// Preview the modification the command should do without applying them
+    /// Run a command without applying any modification
     #[arg(long, global = true)]
     pub dry_run: bool,
+
+    /// Log messages using json objects
+    #[arg(long, global = true)]
+    pub json: bool,
 
     /// Set the message verbosity levels
     #[command(flatten)]
