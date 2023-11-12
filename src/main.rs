@@ -5,15 +5,7 @@ use log4rs::config::{Appender, Root};
 use log4rs::encode::Encode;
 use log4rs::encode::json::JsonEncoder;
 use log4rs::encode::pattern::PatternEncoder;
-
-mod version;
-mod authors;
-mod cleanup;
-mod global_args;
-mod make;
-mod helpers;
-mod macros;
-mod structures;
+use saas_template_companion::{authors, cleanup, global_args, make, version};
 
 /// SaaS Template Companion, helps you in the management and run of common operations to ease the
 /// setup and creation of your SaaS

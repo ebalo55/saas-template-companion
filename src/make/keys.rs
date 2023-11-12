@@ -2,7 +2,7 @@ use std::io::{Seek, Write};
 
 use alkali::{asymmetric::kx, symmetric::cipher};
 use anyhow::Context;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use structures::{
 	environment_record::EnvironmentRecord,
@@ -14,7 +14,7 @@ use crate::helpers::base64_url;
 use crate::structures::file_mode::FileMode;
 use crate::structures::stream_reader::StreamReader;
 
-mod constants;
+pub mod constants;
 mod structures;
 mod table;
 
@@ -51,22 +51,95 @@ fn store_or_update_line(content_store: &mut String, line: &str, environment_vari
 	}
 }
 
+/// Generate a new keypair
+/// # Returns
+/// A tuple with the public and private keys
+/// ```text
+/// (public_key, private_key)
+/// ```
+fn make_keypair() -> anyhow::Result<(String, String)> {
+	let keypair = kx::Keypair::generate()
+		.with_context(|| "Something went wrong while generating asymmetric keypair, does the system support secure cryptography or has enough entropy?")?;
+	let b64_public = base64_url(keypair.public_key.as_slice())
+		.with_context(|| "Something went wrong while encoding public key")?;
+	let b64_secret = base64_url(keypair.private_key.as_slice())
+		.with_context(|| "Something went wrong while encoding secret key")?;
+
+	Ok((b64_public, b64_secret))
+}
+
+/// Generate a new secret key
+fn make_secret_key() -> anyhow::Result<String> {
+	let key = cipher::Key::generate()
+		.with_context(|| "Something went wrong while generating symmetric key, does the system support secure cryptography or has enough entropy?")?;
+	let b64_key = base64_url(key.as_slice())
+		.with_context(|| "Something went wrong while encoding symmetric key")?;
+
+	Ok(b64_key)
+}
+
+/// Print the environment variables as a table or JSON
+fn print_datatable(is_json_context: bool, environment_variables: &EnvironmentVariables) {
+	if !is_json_context {
+		info!("Encryption keys created successfully");
+		table::display_environment_variables_table(&environment_variables);
+	} else {
+		log_mdc::insert("variables", environment_variables.clone());
+		info!("Encryption keys created successfully");
+	}
+}
+
+/// Store the updated .env content into the file
+fn store_updated_env_file(stream_reader: &mut StreamReader, updated_content: &str) -> anyhow::Result<()> {
+	stream_reader.file()
+	             .rewind()
+	             .with_context(|| "Cannot move cursor back to file start, does the file exist and allows reading?")?;
+	stream_reader.file()
+	             .write_all(updated_content.as_bytes())
+	             .with_context(|| "Cannot write to file, does the file exist and allows writing?")?;
+
+	Ok(())
+}
+
+/// Update the .env file with the new values
+fn update_env(environment_variables: &mut EnvironmentVariables) -> anyhow::Result<()> {
+	info!("Updating .env file");
+
+	let mut stream_reader = StreamReader::new(
+		".env",
+		FileMode::builder().write().read().create().build(),
+	).with_context(|| format!("Something went wrong while opening stream reader to .env"))?;
+
+	let mut updated_content = String::new();
+
+	// read line by line and immediately store the updated content
+	loop {
+		let line = stream_reader.read_line()
+		                        .with_context(|| "Something went wrong while reading a new file line")?;
+		debug!("Found line with length of {} bytes", line.length());
+
+		if line.eof() {
+			debug!("EOF reached at .env file");
+			break;
+		}
+
+		store_or_update_line(&mut updated_content, line.line(), environment_variables);
+	}
+
+	store_updated_env_file(&mut stream_reader, &updated_content)
+		.with_context(|| "Something went wrong while updating the .env file")?;
+
+	info!(".env file update completed");
+}
+
 pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> {
 	trace!("{:?}", global_arguments);
 
 	info!("Generating asymmetric encryption keys");
-	let keypair = kx::Keypair::generate().with_context(|| "Failed while generating keypair")?;
-	let b64_public = base64_url(keypair.public_key.as_slice())
-		.with_context(|| "Failed while encoding public key")?;
-	let b64_secret = base64_url(keypair.private_key.as_slice())
-		.with_context(|| "Failed while encoding secret key")?;
+	let (b64_public, b64_secret) = make_keypair().with_context(|| "Something went wrong during asymmetric keypair creation")?;
 
 	info!("Generating symmetric encryption keys");
-	let b64_key = base64_url(
-		cipher::Key::generate()
-			.with_context(|| "Failed while generating symmetric key")?
-			.as_slice()
-	).with_context(|| "Failed while encoding symmetric key")?;
+	let b64_key = make_secret_key().with_context(|| "Something went wrong during symmetric key creation")?;
 
 	let mut environment_variables = EnvironmentVariables {
 		next_auth_secret: EnvironmentRecord::new(
@@ -83,43 +156,12 @@ pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> 
 		),
 	};
 
-	// print the table with the values of the keys
-	if !global_arguments.json {
-		info!("Encryption keys created successfully");
-		table::display_environment_variables_table(&environment_variables);
-	} else {
-		log_mdc::insert("variables", environment_variables.clone());
-		info!("Encryption keys created successfully");
-	}
+	print_datatable(global_arguments.json, &environment_variables);
 
 	if !global_arguments.dry_run {
-		let mut stream_reader = StreamReader::new(
-			".env",
-			FileMode::builder().write().read().create().build(),
-		).with_context(|| format!("Failed to open stream reader to .env"))?;
-
-		let mut updated_content = String::new();
-
-		// read line by line and immediately store the updated content
-		loop {
-			let line = stream_reader.read_line()
-			                        .with_context(|| "Failed to read line")?;
-			debug!("Found line with length of {} bytes", line.length());
-
-			if line.eof() {
-				debug!("EOF reached at .env file");
-				break;
-			}
-
-			store_or_update_line(&mut updated_content, line.line(), &mut environment_variables);
-		}
-
-		stream_reader.file()
-		             .rewind()
-		             .with_context(|| "Cannot move cursor back to file start, does the file still exist?")?;
-		stream_reader.file()
-		             .write_all(updated_content.as_bytes())
-		             .with_context(|| "Cannot write to file, does the file allows writing?")?;
+		update_env(&mut environment_variables).with_context(|| "Something went wrong while updating the environment file")?;
+	} else {
+		warn!("Dry run, skipping file update");
 	}
 
 	Ok(())

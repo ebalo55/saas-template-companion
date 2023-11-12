@@ -3,8 +3,8 @@ use log::trace;
 
 use crate::global_args;
 
-mod keys;
-mod signatures;
+pub mod keys;
+pub mod signatures;
 
 #[derive(Subcommand, Debug)]
 enum MakeSubCommand {
