@@ -23,7 +23,6 @@ comfy-table = "7.1.0"
 serde_json = "1.0.108"
 serde = "1.0.192"
 log-mdc = "0.1.0"
-casey = "0.4.0"
 
 [dev-dependencies]
 assert_cmd = { version = "2.0.12", features = ["color-auto"] }

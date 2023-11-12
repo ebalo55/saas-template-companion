@@ -3,7 +3,7 @@ use std::ops::Index;
 use serde::Serialize;
 
 use crate::json_serialize_to_string;
-use crate::make::keys::environment_record::EnvironmentRecord;
+use crate::make::keys::structures::environment_record::EnvironmentRecord;
 
 pub const ENVIRONMENT_VARIABLES_KEYS: [&str; 3] = [
 	"next_auth_secret",
@@ -11,7 +11,7 @@ pub const ENVIRONMENT_VARIABLES_KEYS: [&str; 3] = [
 	"asymmetric_encryption_private_key"
 ];
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct EnvironmentVariables<'a> {
 	pub next_auth_secret: EnvironmentRecord<'a>,
 	pub asymmetric_encryption_public_key: EnvironmentRecord<'a>,

@@ -1,45 +1,72 @@
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Seek, Write};
-use std::ops::Index;
+use std::io::{Seek, Write};
 
 use alkali::{asymmetric::kx, symmetric::cipher};
 use anyhow::Context;
-use comfy_table::{Attribute, Cell, Row, Table};
-use comfy_table::presets::UTF8_FULL;
 use log::{debug, info, trace};
-use serde::Serialize;
+
+use structures::{
+	environment_record::EnvironmentRecord,
+	environment_variables::EnvironmentVariables,
+};
 
 use crate::global_args;
 use crate::helpers::base64_url;
-use crate::make::keys::environment_record::EnvironmentRecord;
-use crate::make::keys::environment_variables::{ENVIRONMENT_VARIABLES_KEYS, EnvironmentVariables};
+use crate::structures::file_mode::FileMode;
+use crate::structures::stream_reader::StreamReader;
 
 mod constants;
-mod environment_record;
-mod environment_variables;
+mod structures;
+mod table;
 
-/// Pack the environment variables into a vector of rows to be used by the table
-fn pack_table_rows(env_variables: &EnvironmentVariables) -> Vec<Row> {
-	ENVIRONMENT_VARIABLES_KEYS.iter()
-	                          .map(|key| &env_variables[key] as &EnvironmentRecord) // get the value of the key (the struct key hardcoded in the array)
-	                          .map(|ev| Row::from(vec![ev.name(), ev.value()]))
-	                          .collect()
+/// Check if the line should be updated
+fn should_update_line(line: &str, environment_variable: &EnvironmentRecord) -> bool {
+	line.starts_with(environment_variable.name()) && !environment_variable.updated()
+}
+
+/// Update the line with the new value
+fn update_line(content_store: &mut String, environment_variable: &mut EnvironmentRecord) {
+	content_store.push_str(&*format!("{}=\"{}\"\n", environment_variable.name(), environment_variable.value()));
+	environment_variable.set_as_updated();
+}
+
+/// Store or update the current .env file line
+fn store_or_update_line(content_store: &mut String, line: &str, environment_variables: &mut EnvironmentVariables) {
+	if should_update_line(&line, &environment_variables.next_auth_secret) {
+		update_line(
+			content_store,
+			&mut environment_variables.next_auth_secret,
+		)
+	} else if should_update_line(&line, &environment_variables.asymmetric_encryption_public_key) {
+		update_line(
+			content_store,
+			&mut environment_variables.asymmetric_encryption_public_key,
+		)
+	} else if should_update_line(&line, &environment_variables.asymmetric_encryption_private_key) {
+		update_line(
+			content_store,
+			&mut environment_variables.asymmetric_encryption_private_key,
+		)
+	} else {
+		content_store.push_str(&*line);
+	}
 }
 
 pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> {
 	trace!("{:?}", global_arguments);
 
 	info!("Generating asymmetric encryption keys");
-	let keypair = kx::Keypair::generate()?;
-	let b64_public = base64_url(keypair.public_key.as_slice())?;
-	let b64_secret = base64_url(keypair.private_key.as_slice())?;
-
-	debug!("Asymmetric public key = {b64_public}");
-	debug!("Asymmetric secret key = {b64_secret}");
+	let keypair = kx::Keypair::generate().with_context(|| "Failed while generating keypair")?;
+	let b64_public = base64_url(keypair.public_key.as_slice())
+		.with_context(|| "Failed while encoding public key")?;
+	let b64_secret = base64_url(keypair.private_key.as_slice())
+		.with_context(|| "Failed while encoding secret key")?;
 
 	info!("Generating symmetric encryption keys");
-	let b64_key = base64_url(cipher::Key::generate()?.as_slice())?;
-	debug!("Symmetric key = {b64_key}");
+	let b64_key = base64_url(
+		cipher::Key::generate()
+			.with_context(|| "Failed while generating symmetric key")?
+			.as_slice()
+	).with_context(|| "Failed while encoding symmetric key")?;
 
 	let mut environment_variables = EnvironmentVariables {
 		next_auth_secret: EnvironmentRecord::new(
@@ -59,62 +86,40 @@ pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> 
 	// print the table with the values of the keys
 	if !global_arguments.json {
 		info!("Encryption keys created successfully");
-
-		let mut table = Table::new();
-		table.load_preset(UTF8_FULL)
-		     .set_header(vec![
-			     Cell::new("Environment variable name").add_attribute(Attribute::Bold),
-			     Cell::new("Value").add_attribute(Attribute::Bold),
-		     ])
-		     .add_rows(pack_table_rows(&environment_variables));
-
-		println!("{table}");
+		table::display_environment_variables_table(&environment_variables);
 	} else {
-		log_mdc::insert("variables", environment_variables);
+		log_mdc::insert("variables", environment_variables.clone());
 		info!("Encryption keys created successfully");
 	}
 
 	if !global_arguments.dry_run {
-		let cwd = std::env::current_dir()
-			.with_context(|| "Failed to get the current working directory")?;
+		let mut stream_reader = StreamReader::new(
+			".env",
+			FileMode::builder().write().read().create().build(),
+		).with_context(|| format!("Failed to open stream reader to .env"))?;
 
-		let mut env_file = OpenOptions::new()
-			.write(true)
-			.read(true)
-			.create(true)
-			.open(".env")
-			.with_context(|| format!("Failed to open or create '{}/.env'", cwd.display()))?;
-
-		let mut reader = BufReader::new(&env_file);
-		let mut line = String::new();
 		let mut updated_content = String::new();
 
-		// read line by line and immediately replace it
+		// read line by line and immediately store the updated content
 		loop {
-			line.clear();
-			let line_length = reader.read_line(&mut line)
-			                        .with_context(|| "Failed while trying to read the file")?;
-			debug!("Found line with length of {} bytes", line_length);
+			let line = stream_reader.read_line()
+			                        .with_context(|| "Failed to read line")?;
+			debug!("Found line with length of {} bytes", line.length());
 
-			// eof reached
-			if line_length.eq(&0) {
-				debug!("Empty line detected, EOF reached");
+			if line.eof() {
+				debug!("EOF reached at .env file");
 				break;
 			}
 
-			if line.starts_with(constants::ENV_VARIABLE__NEXTAUTH_SECRET) {
-				updated_content.push_str(&*format!("{}=\"{}\"\n", constants::ENV_VARIABLE__NEXTAUTH_SECRET, b64_key));
-			} else if line.starts_with(constants::ENV_VARIABLE__ASYMMETRIC_ENCRYPTION_PUBLIC_KEY) {
-				updated_content.push_str(&*format!("{}=\"{}\"\n", constants::ENV_VARIABLE__ASYMMETRIC_ENCRYPTION_PUBLIC_KEY, b64_public));
-			} else if line.starts_with(constants::ENV_VARIABLE__ASYMMETRIC_ENCRYPTION_PRIVATE_KEY) {
-				updated_content.push_str(&*format!("{}=\"{}\"\n", constants::ENV_VARIABLE__ASYMMETRIC_ENCRYPTION_PRIVATE_KEY, b64_secret));
-			} else {
-				updated_content.push_str(&*line);
-			}
+			store_or_update_line(&mut updated_content, line.line(), &mut environment_variables);
 		}
-		env_file.rewind()
-		        .context("Cannot move cursor back to file start, does the file still exist?")?;
-		env_file.write_all(updated_content.as_bytes())?;
+
+		stream_reader.file()
+		             .rewind()
+		             .with_context(|| "Cannot move cursor back to file start, does the file still exist?")?;
+		stream_reader.file()
+		             .write_all(updated_content.as_bytes())
+		             .with_context(|| "Cannot write to file, does the file allows writing?")?;
 	}
 
 	Ok(())

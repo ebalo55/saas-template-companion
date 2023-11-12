@@ -13,6 +13,7 @@ mod global_args;
 mod make;
 mod helpers;
 mod macros;
+mod structures;
 
 /// SaaS Template Companion, helps you in the management and run of common operations to ease the
 /// setup and creation of your SaaS

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use crate::json_serialize_to_string;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct EnvironmentRecord<'a> {
 	/// Raw environment variable name
 	env_name: &'a str,
@@ -23,8 +23,7 @@ impl<'a> EnvironmentRecord<'a> {
 	}
 
 	/// Update the value of the record
-	pub fn update(&mut self, value: &'a str) {
-		self.value = value;
+	pub fn set_as_updated(&mut self) {
 		self.updated = true;
 	}
 
