@@ -1,7 +1,9 @@
 use std::io::{Seek, Write};
+use std::path::PathBuf;
 
 use alkali::{asymmetric::kx, symmetric::cipher};
 use anyhow::Context;
+use clap::Args;
 use log::{debug, info, trace, warn};
 
 use structures::{
@@ -11,12 +13,20 @@ use structures::{
 
 use crate::global_args;
 use crate::helpers::base64_url;
+use crate::make::keys::structures::environment_variables::ENVIRONMENT_VARIABLES_KEYS;
 use crate::structures::file_mode::FileMode;
 use crate::structures::stream_reader::StreamReader;
 
 pub mod constants;
 mod structures;
 mod table;
+
+#[derive(Args, Debug)]
+pub struct KeysArgs {
+	/// File to read the environment variables from, starting from the current working directory
+	#[arg(long, short, default_value = ".env")]
+	env: PathBuf,
+}
 
 /// Check if the line should be updated
 fn should_update_line(line: &str, environment_variable: &EnvironmentRecord) -> bool {
@@ -101,14 +111,24 @@ fn store_updated_env_file(stream_reader: &mut StreamReader, updated_content: &st
 	Ok(())
 }
 
+/// Ensure that the variable exists or add it to the content store
+fn ensure_variables_exists_or_add(content_store: &mut String, environment_variable: &mut EnvironmentRecord) {
+	if !content_store.contains(environment_variable.name()) {
+		content_store.push_str(&*format!("{}=\"{}\"\n", environment_variable.name(), environment_variable.value()));
+		environment_variable.set_as_updated();
+	}
+}
+
 /// Update the .env file with the new values
-fn update_env(environment_variables: &mut EnvironmentVariables) -> anyhow::Result<()> {
+fn update_env(environment_variables: &mut EnvironmentVariables, arguments: &KeysArgs) -> anyhow::Result<()> {
 	info!("Updating .env file");
 
+	let env = arguments.env.to_str().ok_or(anyhow::anyhow!("Cannot convert environment file path to string"))?;
+
 	let mut stream_reader = StreamReader::new(
-		".env",
+		env,
 		FileMode::builder().write().read().create().build(),
-	).with_context(|| format!("Something went wrong while opening stream reader to .env"))?;
+	).with_context(|| format!("Something went wrong while opening stream reader to {}", env))?;
 
 	let mut updated_content = String::new();
 
@@ -119,20 +139,26 @@ fn update_env(environment_variables: &mut EnvironmentVariables) -> anyhow::Resul
 		debug!("Found line with length of {} bytes", line.length());
 
 		if line.eof() {
-			debug!("EOF reached at .env file");
+			debug!("EOF reached at {} file", env);
 			break;
 		}
 
 		store_or_update_line(&mut updated_content, line.line(), environment_variables);
 	}
 
+	for environment_variable_name in ENVIRONMENT_VARIABLES_KEYS {
+		ensure_variables_exists_or_add(&mut updated_content, &mut environment_variables[environment_variable_name]);
+	}
+
 	store_updated_env_file(&mut stream_reader, &updated_content)
-		.with_context(|| "Something went wrong while updating the .env file")?;
+		.with_context(|| format!("Something went wrong while updating the {} file", env))?;
 
 	info!(".env file update completed");
+
+	Ok(())
 }
 
-pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> {
+pub fn handle(global_arguments: &global_args::GlobalArgs, arguments: &KeysArgs) -> anyhow::Result<()> {
 	trace!("{:?}", global_arguments);
 
 	info!("Generating asymmetric encryption keys");
@@ -159,7 +185,7 @@ pub fn handle(global_arguments: &global_args::GlobalArgs) -> anyhow::Result<()> 
 	print_datatable(global_arguments.json, &environment_variables);
 
 	if !global_arguments.dry_run {
-		update_env(&mut environment_variables).with_context(|| "Something went wrong while updating the environment file")?;
+		update_env(&mut environment_variables, arguments).with_context(|| "Something went wrong while updating the environment file")?;
 	} else {
 		warn!("Dry run, skipping file update");
 	}

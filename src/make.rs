@@ -10,7 +10,7 @@ pub mod signatures;
 enum MakeSubCommand {
 	/// Generate and store new encryption keys
 	#[command()]
-	Keys,
+	Keys(keys::KeysArgs),
 
 	/// Remap the pre-generated procedure signatures
 	#[command()]
@@ -28,11 +28,11 @@ pub fn handle(global_arguments: &global_args::GlobalArgs, arguments: &MakeArgs) 
 	trace!("{:?}", arguments);
 
 	match &arguments.command {
-		MakeSubCommand::Keys => {
-			keys::handle(global_arguments)
+		MakeSubCommand::Keys(options) => {
+			keys::handle(global_arguments, options)
 		}
 		MakeSubCommand::Signatures(options) => {
-			signatures::handle(global_arguments, &options)
+			signatures::handle(global_arguments, options)
 		}
 	}
 }
